@@ -1,0 +1,351 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jurassic Run</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:#14221c;color:#f4f5d5;font-family:Arial,sans-serif;text-align:center}
+.game{max-width:1000px;margin:auto}
+h1{color:#b6e477;letter-spacing:3px}
+.hud{display:flex;justify-content:space-between;margin:12px 0;font-weight:bold}
+canvas{display:block;width:100%;height:auto;border:3px solid #415d39;border-radius:12px;touch-action:manipulation}
+button{padding:12px 22px;margin:10px 5px;border:0;border-radius:8px;background:#a9d75e;color:#1a2b1d;font-size:16px;font-weight:bold;cursor:pointer;touch-action:manipulation}
+p{font-size:14px;color:#d6e3c8}
+</style>
+</head>
+<body>
+<div class="game">
+<h1>JURASSIC RUN</h1>
+<div class="hud">
+<span>PONTOS: <span id="score">0</span></span>
+<span>RECORDE: <span id="record">0</span></span>
+</div>
+<canvas id="canvas" width="1000" height="430"></canvas>
+<button id="startBtn">JOGAR / RECOMEÇAR</button>
+<button id="duckBtn">ABAIXAR ↓</button>
+<p>ESPAÇO ou ↑ para pular · ↓ para abaixar · Toque na tela para pular.</p>
+</div>
+
+<script>
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+const scoreEl=document.getElementById("score");
+const recordEl=document.getElementById("record");
+const startBtn=document.getElementById("startBtn");
+const duckBtn=document.getElementById("duckBtn");
+
+let running=false,ended=false,frame=0,score=0,speed=5;
+let record=Number(localStorage.getItem("jr-record")||0);
+let obstacles=[],bones=[],clouds=[];
+const ground=350;
+const dino={x:120,y:ground,vy:0,onGround:true,duck:false};
+
+recordEl.textContent=record;
+
+for(let i=0;i<7;i++){
+ clouds.push({x:Math.random()*1000,y:35+Math.random()*100,s:20+Math.random()*20});
+}
+
+function rounded(x,y,w,h,r,color){
+ ctx.fillStyle=color;
+ ctx.beginPath();
+ ctx.roundRect(x,y,w,h,r);
+ ctx.fill();
+}
+
+function background(){
+ const sky=ctx.createLinearGradient(0,0,0,430);
+ sky.addColorStop(0,"#f38b61");
+ sky.addColorStop(.6,"#ffd18a");
+ sky.addColorStop(1,"#e5ad69");
+ ctx.fillStyle=sky;
+ ctx.fillRect(0,0,1000,430);
+
+ // Sol
+ ctx.fillStyle="#ffe7a0";
+ ctx.beginPath();ctx.arc(800,90,43,0,Math.PI*2);ctx.fill();
+
+ // Montanhas
+ ctx.fillStyle="#b77958";
+ ctx.beginPath();
+ ctx.moveTo(0,290);ctx.lineTo(120,155);ctx.lineTo(240,290);
+ ctx.lineTo(365,190);ctx.lineTo(510,290);ctx.lineTo(660,170);
+ ctx.lineTo(820,290);ctx.lineTo(930,205);ctx.lineTo(1000,270);
+ ctx.lineTo(1000,350);ctx.lineTo(0,350);ctx.fill();
+
+ // Vulcão
+ ctx.fillStyle="#6b4c43";
+ ctx.beginPath();
+ ctx.moveTo(450,350);ctx.lineTo(625,85);ctx.lineTo(800,350);ctx.fill();
+ ctx.fillStyle="#f15b35";
+ ctx.beginPath();
+ ctx.moveTo(608,112);ctx.lineTo(625,85);ctx.lineTo(643,113);
+ ctx.lineTo(633,140);ctx.lineTo(619,133);ctx.fill();
+
+ // Cachoeira
+ ctx.fillStyle="#56c9d2";
+ ctx.fillRect(250,255,17,85);
+ ctx.fillRect(270,278,9,62);
+ ctx.fillStyle="#9af0e5";
+ ctx.fillRect(254,260,4,75);
+
+ // Nuvens
+ ctx.fillStyle="#ffe3b7";
+ clouds.forEach(c=>{
+   ctx.beginPath();
+   ctx.arc(c.x,c.y,c.s*.55,0,Math.PI*2);
+   ctx.arc(c.x+c.s*.5,c.y-8,c.s*.65,0,Math.PI*2);
+   ctx.arc(c.x+c.s,c.y,c.s*.5,0,Math.PI*2);
+   ctx.fill();
+   if(running){c.x-=.5;if(c.x< -80)c.x=1050;}
+ });
+
+ // Chão
+ ctx.fillStyle="#536d39";ctx.fillRect(0,ground,1000,80);
+ ctx.fillStyle="#88a94d";ctx.fillRect(0,ground,1000,12);
+
+ for(let i=0;i<24;i++){
+   const x=((i*67-frame*speed)%1050+1050)%1050;
+   ctx.fillStyle=i%2?"#344e2e":"#9cb45a";
+   ctx.fillRect(x,380+(i%3)*10,8,3);
+ }
+}
+
+// Dinossauro sem detalhes brancos
+function drawDino(){
+ ctx.save();
+ ctx.translate(dino.x,dino.y);
+ const leg=dino.onGround&&running?Math.sin(frame*.35)*5:0;
+ const green="#39834a",light="#4d9a51",dark="#285d36";
+
+ if(dino.duck&&dino.onGround){
+   ctx.fillStyle=green;
+   ctx.beginPath();ctx.moveTo(-15,-23);ctx.lineTo(-48,-8);
+   ctx.lineTo(-19,-7);ctx.closePath();ctx.fill();
+   rounded(-30,-37,58,32,11,green);
+   rounded(13,-43,35,25,8,light);
+   rounded(31,-32,22,12,5,light);
+   ctx.fillStyle=dark;
+   ctx.beginPath();ctx.arc(36,-35,3.5,0,Math.PI*2);ctx.fill();
+   rounded(-20,-12,14,12,3,dark);
+   rounded(9,-12,14,12,3,dark);
+ }else{
+   ctx.fillStyle=green;
+   ctx.beginPath();ctx.moveTo(-17,-42);ctx.lineTo(-55,-27+leg);
+   ctx.lineTo(-22,-18);ctx.closePath();ctx.fill();
+
+   rounded(-29,-58,50,45,12,green);
+
+   ctx.fillStyle=green;
+   ctx.beginPath();ctx.moveTo(6,-47);ctx.lineTo(19,-67);
+   ctx.lineTo(31,-47);ctx.closePath();ctx.fill();
+
+   rounded(12,-80,36,27,8,light);
+   rounded(29,-66,25,14,5,light);
+
+   // Olho escuro, sem círculo branco
+   ctx.fillStyle="#14271b";
+   ctx.beginPath();ctx.arc(36,-71,3.5,0,Math.PI*2);ctx.fill();
+
+   ctx.fillStyle=dark;
+   ctx.beginPath();ctx.arc(49,-61,1.8,0,Math.PI*2);ctx.fill();
+
+   ctx.strokeStyle=dark;ctx.lineWidth=5;ctx.lineCap="round";
+   ctx.beginPath();ctx.moveTo(14,-44);ctx.lineTo(24,-34);
+   ctx.lineTo(29,-38);ctx.stroke();
+
+   rounded(-20,-21,14,19+leg,4,dark);
+   rounded(3,-21,14,19-leg,4,dark);
+   rounded(-25,-5+leg,19,6,3,dark);
+   rounded(0,-5-leg,19,6,3,dark);
+
+   ctx.fillStyle=dark;
+   for(let i=0;i<3;i++){
+     ctx.beginPath();ctx.moveTo(-13+i*10,-57);
+     ctx.lineTo(-8+i*10,-65);ctx.lineTo(-3+i*10,-57);
+     ctx.fill();
+   }
+ }
+ ctx.restore();
+}
+
+function drawObstacle(o){
+ ctx.save();ctx.translate(o.x,ground);
+ if(o.type==="cactus"){
+   rounded(-12,-48,24,48,6,"#28583a");
+   rounded(-25,-34,14,9,4,"#28583a");
+   rounded(-25,-43,9,19,4,"#28583a");
+   rounded(12,-28,14,9,4,"#28583a");
+   rounded(17,-40,9,21,4,"#28583a");
+ }else{
+   ctx.save();ctx.rotate(-.08);
+   rounded(-34,-25,68,23,8,"#63452f");
+   ctx.fillStyle="#896044";ctx.fillRect(-22,-18,42,4);
+   ctx.restore();
+ }
+ ctx.restore();
+}
+
+function drawBone(b){
+ ctx.save();ctx.translate(b.x,b.y);
+ ctx.rotate(Math.sin(frame*.06+b.x)*.15);
+ ctx.strokeStyle="#d8c18a";ctx.lineWidth=7;ctx.lineCap="round";
+ ctx.beginPath();ctx.moveTo(-9,-7);ctx.lineTo(9,7);ctx.stroke();
+ ctx.fillStyle="#d8c18a";
+ [[-10,-9],[-7,-12],[10,9],[7,12]].forEach(p=>{
+   ctx.beginPath();ctx.arc(p[0],p[1],5,0,Math.PI*2);ctx.fill();
+ });
+ ctx.restore();
+}
+
+function spawn(){
+ if(frame%Math.max(48,Math.floor(100-speed*4))===0){
+   obstacles.push({x:1030,type:Math.random()>.35?"cactus":"log",w:48,h:48});
+ }
+ if(frame%90===0)bones.push({x:1020,y:ground-65-Math.random()*65});
+}
+
+function update(){
+ obstacles.forEach(o=>o.x-=speed);
+ bones.forEach(b=>b.x-=speed);
+ obstacles=obstacles.filter(o=>o.x>-80);
+ bones=bones.filter(b=>b.x>-30&& !b.collected);
+
+ for(const b of bones){
+   if(Math.abs(b.x-(dino.x+12))<32&&Math.abs(b.y-(dino.y-40))<42){
+     b.collected=true;score+=10;
+   }
+ }
+
+ const left=dino.x-22,right=dino.x+44;
+ const top=dino.y-(dino.duck?40:78);
+
+ for(const o of obstacles){
+   if(right>o.x-o.w/2+5&&left<o.x+o.w/2-5&&
+      dino.y>ground-o.h+5&&top<ground-3){
+     endGame();
+   }
+ }
+}
+
+function draw(){
+ background();
+ bones.forEach(drawBone);
+ obstacles.forEach(drawObstacle);
+ drawDino();
+
+ if(!running&&!ended){
+   ctx.fillStyle="#263b2b";ctx.textAlign="center";
+   ctx.font="bold 30px Arial";
+   ctx.fillText("AVENTURA NO JURÁSSICO",500,185);
+   ctx.font="18px Arial";
+   ctx.fillText("Clique em JOGAR para começar",500,220);
+ }
+
+ if(ended){
+   ctx.fillStyle="rgba(15,25,19,.7)";
+   ctx.fillRect(0,0,1000,430);
+   ctx.fillStyle="#f6edce";ctx.textAlign="center";
+   ctx.font="bold 48px Arial";
+   ctx.fillText("FIM DE JOGO",500,185);
+   ctx.font="24px Arial";
+   ctx.fillText("Pontuação: "+score,500,228);
+   ctx.font="18px Arial";
+   ctx.fillText("Clique em RECOMEÇAR para jogar novamente",500,265);
+ }
+}
+
+function endGame(){
+ running=false;ended=true;
+ if(score>record){
+   record=score;
+   localStorage.setItem("jr-record",record);
+   recordEl.textContent=record;
+ }
+}
+
+function startGame(){
+ score=0;speed=5;frame=0;obstacles=[];bones=[];
+ dino.y=ground;dino.vy=0;dino.onGround=true;dino.duck=false;
+ running=true;ended=false;
+ scoreEl.textContent=score;
+}
+
+function jump(){
+ if(!running){
+   if(!ended)startGame();
+   return;
+ }
+ if(dino.onGround){
+   dino.vy=-15;
+   dino.onGround=false;
+   dino.duck=false;
+ }
+}
+
+function loop(){
+ if(running){
+   frame++;
+   speed=Math.min(12,5+frame/1500);
+
+   // Atualização corrigida do pulo
+   if(!dino.onGround){
+     dino.vy+=.65;
+     dino.y+=dino.vy;
+
+     if(dino.y>=ground){
+       dino.y=ground;
+       dino.vy=0;
+       dino.onGround=true;
+     }
+   }
+
+   if(frame%7===0)score++;
+   spawn();
+   update();
+   scoreEl.textContent=score;
+ }
+ draw();
+ requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener("click",startGame);
+
+document.addEventListener("keydown",e=>{
+ if(e.code==="Space"||e.code==="ArrowUp"){
+   e.preventDefault();
+   if(e.repeat)return;
+   if(!running&&!ended)startGame();
+   else jump();
+ }
+ if(e.code==="ArrowDown"){
+   e.preventDefault();
+   if(dino.onGround)dino.duck=true;
+ }
+ if(e.code==="Enter"&&ended)startGame();
+});
+
+document.addEventListener("keyup",e=>{
+ if(e.code==="ArrowDown")dino.duck=false;
+});
+
+duckBtn.addEventListener("pointerdown",e=>{
+ e.preventDefault();
+ if(dino.onGround)dino.duck=true;
+});
+["pointerup","pointerleave","pointercancel"].forEach(ev=>{
+ duckBtn.addEventListener(ev,()=>dino.duck=false);
+});
+
+canvas.addEventListener("pointerdown",()=>{
+ if(!running&&!ended)startGame();
+ else jump();
+});
+
+loop();
+</script>
+</body>
+</html>
